@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.lifepilot.goal.GoalRepository;
 import com.lifepilot.security.CurrentUser;
+import com.lifepilot.user.AppUser;
 import com.lifepilot.user.AppUserRepository;
 import java.util.Optional;
 import java.util.UUID;
@@ -75,5 +76,49 @@ class TaskServiceAuthorizationTest {
 
         assertEquals(existingId, result.id());
         verify(users, never()).findById(authenticatedUser);
+    }
+
+    @Test
+    void taskCreationUsesAuthenticatedOwner() {
+        AppUser owner = mock(AppUser.class);
+        when(users.findById(authenticatedUser)).thenReturn(Optional.of(owner));
+        when(tasks.save(org.mockito.ArgumentMatchers.any(TaskEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        TaskDtos.TaskRequest request = new TaskDtos.TaskRequest(
+                null, "Write tests", "", TaskCategory.PERSONAL, TaskPriority.HIGH,
+                null, null, false, false, null, null, null);
+
+        TaskDtos.TaskResponse result = service.create(request);
+
+        assertEquals("Write tests", result.title());
+        verify(users).findById(authenticatedUser);
+        verify(tasks).save(org.mockito.ArgumentMatchers.argThat(
+                task -> task.getOwner() == owner));
+    }
+
+    @Test
+    void taskCompletionUpdatesOnlyTheAuthenticatedUsersTask() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = mock(TaskEntity.class);
+        when(task.getCategory()).thenReturn(TaskCategory.PERSONAL);
+        when(task.getPriority()).thenReturn(TaskPriority.MEDIUM);
+        when(tasks.findByIdAndOwner_Id(taskId, authenticatedUser)).thenReturn(Optional.of(task));
+
+        service.complete(taskId, true);
+
+        verify(task).setCompleted(true);
+        verify(tasks).findByIdAndOwner_Id(taskId, authenticatedUser);
+    }
+
+    @Test
+    void taskDeletionUsesOwnerScopedLookup() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = mock(TaskEntity.class);
+        when(tasks.findByIdAndOwner_Id(taskId, authenticatedUser)).thenReturn(Optional.of(task));
+
+        service.delete(taskId);
+
+        verify(tasks).delete(task);
+        verify(tasks).findByIdAndOwner_Id(taskId, authenticatedUser);
     }
 }

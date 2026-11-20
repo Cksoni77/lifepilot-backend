@@ -50,3 +50,5 @@ All event routes are authenticated and owner-scoped. The endpoint reports confli
 - `POST /api/ai/daily-plan` returns ranked pending tasks, no time slots unless a scheduling data source is later added, and questions for missing availability.
 
 Provider-generated actions are never applied. Cross-user IDs return not found.
+
+Configure Neon and the backend environment as documented in [BACKEND_SETUP.md](BACKEND_SETUP.md). There is no local database fallback. No health/Actuator route is currently configured.
