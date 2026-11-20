@@ -19,6 +19,9 @@ public class JwtService {
     public JwtService(
             @Value("${app.jwt.secret}") String secret,
             @Value("${app.jwt.access-token-minutes}") long accessTokenMinutes) {
+        if (accessTokenMinutes <= 0) {
+            throw new IllegalArgumentException("JWT access-token lifetime must be positive");
+        }
         this.key = Keys.hmacShaKeyFor(Decoders.BASE64.decode(secret));
         this.accessTokenMinutes = accessTokenMinutes;
     }

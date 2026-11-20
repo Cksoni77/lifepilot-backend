@@ -2,9 +2,10 @@ spring:
   application:
     name: lifepilot-backend
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/lifepilot}
-    username: ${DATABASE_USERNAME:lifepilot}
-    password: ${DATABASE_PASSWORD}
+    url: jdbc:postgresql://ep-raspy-tree-bdn0cjaf-pooler.c-8.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+    username: neondb_owner
+    password: npg_ip5Z4ghmJFVL
+    driver-class-name: org.postgresql.Driver
   jpa:
     open-in-view: false
     hibernate:
@@ -21,7 +22,7 @@ server:
     include-message: never
 app:
   jwt:
-    secret: ${JWT_SECRET}
+    secret: tU6GAehIjvLUnedxtXZw9pL0SEJpj8RSoIEGtT76NoQbaQWRyhB/mwXI+9cU/JsVn4gHe8+u1yVpQM1lh5m5F
     access-token-minutes: ${JWT_ACCESS_TOKEN_MINUTES:15}
     refresh-token-days: ${JWT_REFRESH_TOKEN_DAYS:30}
   cors:

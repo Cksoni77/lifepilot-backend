@@ -1,58 +1,35 @@
-# LifePilot
+# LifePilot Backend
 
-LifePilot is a Flutter personal-management app with a Spring Boot REST backend. The backend owns account authentication and task, habit, and goal records in PostgreSQL. Flutter stores access and refresh tokens with `flutter_secure_storage`; preferences and pre-existing local data remain on the device.
+LifePilot is a Java 17 / Spring Boot REST backend for the Flutter personal-management application. It uses Spring MVC, Spring Security with JWT, Spring Data JPA/Hibernate, Flyway, and remote Neon PostgreSQL.
 
-## Run locally (Windows / Android emulator)
+## Quick start
 
-1. Start PostgreSQL and configure the backend environment. See [SETUP_GUIDE.md](SETUP_GUIDE.md).
-2. From this backend directory, start Spring Boot:
+1. Install Java 17 and Maven 3.9 or later.
+2. Create a Neon PostgreSQL project and configure `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD` in your PowerShell session. The JDBC URL must use `jdbc:postgresql://HOST/DATABASE?sslmode=require`.
+3. Configure `JWT_SECRET` as a base64-encoded random key of at least 32 bytes. `JWT_ACCESS_TOKEN_MINUTES` and `JWT_REFRESH_TOKEN_DAYS` default to 15 and 30.
+4. From the backend root, run:
 
    ```powershell
-   $env:DATABASE_URL = 'jdbc:postgresql://localhost:5432/lifepilot'
-   $env:DATABASE_USERNAME = 'lifepilot'
-   $env:DATABASE_PASSWORD = 'replace-with-a-local-password'
-   $env:JWT_SECRET = python -c "import secrets,base64;print(base64.b64encode(secrets.token_bytes(32)).decode())"
+   mvn clean compile
+   mvn test
+   mvn clean package
    mvn spring-boot:run
    ```
 
-3. In a second terminal, enter the sibling Flutter directory and run the app:
+Full environment-variable and Neon setup instructions are in [BACKEND_SETUP.md](BACKEND_SETUP.md). `.env.example` contains placeholders only; Spring Boot does not load dotenv files automatically. Do not use a local database fallback.
 
-   ```powershell
-   Set-Location ..\lifepilot
-   flutter pub get
-   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8080
-   ```
+## Architecture
 
-   `10.0.2.2` is the Android emulator's route to the host computer. Use your computer's LAN IP for a physical device, `http://localhost:8080` for an iOS simulator or local web development, and HTTPS for production.
+Feature packages under `src/main/java/com/lifepilot` separate controllers, DTOs, services, repositories, and entities. User-owned data is resolved from the authenticated JWT identity. Flyway migrations live in `src/main/resources/db/migration`; Hibernate uses `ddl-auto: validate`.
 
-The mobile app requires the backend for sign-in and task/habit/goal operations. AI chat uses deterministic saved-data answers when `OPENAI_API_KEY` is absent; natural-language AI requires a backend key. No API key belongs in Flutter.
+## API and project docs
 
-## Project map
-
-- `..\lifepilot\` — sibling Flutter application and feature modules
-- `.` — Java 17, Spring Boot 3.4, Maven REST API
-- `src\main\resources\db\migration\` — Flyway PostgreSQL migrations
-
-## Documentation
-
-- [Migration analysis](../MIGRATION_ANALYSIS.md)
-- [Migration status](../MIGRATION_STATUS.md)
-- [Implementation status and known gaps](IMPLEMENTATION_STATUS.md)
-- [Setup guide](SETUP_GUIDE.md)
+- [API endpoints](API_DOCUMENTATION.md)
+- [Build audit](BACKEND_BUILD_AUDIT.md)
+- [Latest build status](BACKEND_BUILD_STATUS.md)
+- [Security](SECURITY.md)
 - [Architecture](ARCHITECTURE.md)
 - [Database design](DATABASE_DESIGN.md)
-- [API documentation](API_DOCUMENTATION.md)
 - [AI design](AI_DESIGN.md)
-- [Security](SECURITY.md)
-- [Testing](TESTING.md)
 
-## Checks
-
-```powershell
-mvn test
-Set-Location ..\lifepilot
-flutter analyze
-flutter test
-```
-
-PostgreSQL is required for backend startup and database integration tests. See [TESTING.md](TESTING.md) for what has and has not been run in this environment.
+AI provider access is optional and configured only on the backend. Email verification and password reset are not available until an email provider is implemented.
