@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lifepilot.TestAppProperties;
 import com.lifepilot.task.TaskDtos;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -12,7 +13,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class RecommendationEngineTest {
-    private final RecommendationEngine engine = new RecommendationEngine(0.30, 0.30, 0.20, 0.20);
+    private final RecommendationEngine engine =
+            new RecommendationEngine(TestAppProperties.defaults());
 
     @Test
     void ranksHigherPriorityAndUrgentTasksFirst() {
@@ -39,7 +41,20 @@ class RecommendationEngineTest {
     @Test
     void rejectsWeightsThatDoNotSumToOne() {
         assertThrows(IllegalArgumentException.class,
-                () -> new RecommendationEngine(0.3, 0.3, 0.3, 0.2));
+                () -> new RecommendationEngine(TestAppProperties.create(
+                        15, 30, "0.3", "0.3", "0.3", "0.2", "")));
+    }
+
+    @Test
+    void configuredWeightsChangeTheScoringResult() {
+        TaskDtos.TaskResponse highPriority = task("high", "HIGH", null, null);
+        RecommendationEngine priorityWeighted = new RecommendationEngine(
+                TestAppProperties.create(15, 30, "0.60", "0.20", "0.10", "0.10", ""));
+        RecommendationEngine goalWeighted = new RecommendationEngine(
+                TestAppProperties.create(15, 30, "0.20", "0.20", "0.10", "0.50", ""));
+
+        assertTrue(priorityWeighted.rank(List.of(highPriority)).get(0).score()
+                > goalWeighted.rank(List.of(highPriority)).get(0).score());
     }
 
     private TaskDtos.TaskResponse task(

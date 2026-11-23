@@ -26,6 +26,16 @@ public class HabitController {
     @GetMapping
     public List<HabitDtos.HabitResponse> list() { return habitService.list(); }
 
+    @GetMapping("/{id}")
+    public HabitDtos.HabitResponse get(@PathVariable UUID id) {
+        return habitService.get(id);
+    }
+
+    @GetMapping("/{id}/statistics")
+    public HabitDtos.HabitProgress progress(@PathVariable UUID id) {
+        return habitService.progress(id);
+    }
+
     @PostMapping
     public HabitDtos.HabitResponse create(@Valid @RequestBody HabitDtos.HabitRequest request) {
         return habitService.create(request);

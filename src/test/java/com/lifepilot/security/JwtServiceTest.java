@@ -1,5 +1,6 @@
 package com.lifepilot.security;
 
+import com.lifepilot.TestAppProperties;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -21,15 +22,28 @@ class JwtServiceTest {
 
     @Test
     void signsAndValidatesAccessTokenSubject() {
-        JwtService jwtService = new JwtService(SECRET, 15);
+        JwtService jwtService = new JwtService(TestAppProperties.defaults());
         UUID userId = UUID.randomUUID();
 
         assertEquals(userId, jwtService.readUserId(jwtService.issueAccessToken(userId)));
     }
 
     @Test
+    void accessTokenUsesConfiguredFifteenMinuteExpiry() {
+        JwtService jwtService = new JwtService(TestAppProperties.create(
+                SECRET, 15, 30, "0.30", "0.30", "0.20", "0.20", ""));
+        String token = jwtService.issueAccessToken(UUID.randomUUID());
+        var claims = Jwts.parser()
+                .verifyWith(Keys.hmacShaKeyFor(Base64.getDecoder().decode(SECRET)))
+                .build().parseSignedClaims(token).getPayload();
+
+        assertEquals(15 * 60_000L,
+                claims.getExpiration().getTime() - claims.getIssuedAt().getTime());
+    }
+
+    @Test
     void rejectsExpiredAccessTokens() {
-        JwtService jwtService = new JwtService(SECRET, 15);
+        JwtService jwtService = new JwtService(TestAppProperties.defaults());
         Instant expiredAt = Instant.now().minusSeconds(60);
         SecretKey key = Keys.hmacShaKeyFor(Base64.getDecoder().decode(SECRET));
         String expiredToken = Jwts.builder()
@@ -48,8 +62,9 @@ class JwtServiceTest {
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         });
-        JwtService issuer = new JwtService(otherSecret, 15);
-        JwtService verifier = new JwtService(SECRET, 15);
+        JwtService issuer = new JwtService(TestAppProperties.create(
+                otherSecret, 15, 30, "0.30", "0.30", "0.20", "0.20", ""));
+        JwtService verifier = new JwtService(TestAppProperties.defaults());
         String wrongSignature = issuer.issueAccessToken(UUID.randomUUID());
 
         assertThrows(JwtException.class, () -> verifier.readUserId(wrongSignature));
@@ -58,7 +73,17 @@ class JwtServiceTest {
 
     @Test
     void rejectsNonPositiveAccessTokenLifetime() {
-        assertThrows(IllegalArgumentException.class, () -> new JwtService(SECRET, 0));
+        assertThrows(IllegalArgumentException.class,
+                () -> new JwtService(TestAppProperties.create(
+                        0, 30, "0.30", "0.30", "0.20", "0.20", "")));
+    }
+
+    @Test
+    void rejectsWeakJwtSigningKey() {
+        String weakSecret = Base64.getEncoder().encodeToString(new byte[16]);
+        assertThrows(IllegalStateException.class,
+                () -> new JwtService(TestAppProperties.create(
+                        weakSecret, 15, 30, "0.30", "0.30", "0.20", "0.20", "")));
     }
 
     @Test

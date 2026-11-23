@@ -1,10 +1,12 @@
 package com.lifepilot.security;
 
-import java.util.Arrays;
-import org.springframework.beans.factory.annotation.Value;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.common.ApiError;
+import com.lifepilot.config.AppProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -21,22 +23,36 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(
-            HttpSecurity http, JwtAuthenticationFilter jwtFilter) throws Exception {
+            HttpSecurity http, JwtAuthenticationFilter jwtFilter,
+            ObjectMapper objectMapper) throws Exception {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(
                         SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/health/**",
+                                "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
+                                .permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated())
-                .exceptionHandling(errors -> errors.authenticationEntryPoint(
-                        (request, response, exception) -> {
-                            response.setStatus(org.springframework.http.HttpStatus.UNAUTHORIZED.value());
+                .exceptionHandling(errors -> errors
+                        .authenticationEntryPoint((request, response, exception) -> {
+                            response.setStatus(HttpStatus.UNAUTHORIZED.value());
                             response.setContentType("application/json");
-                            response.getWriter().write(
-                                    "{\"status\":401,\"message\":\"Authentication required\"}");
+                            objectMapper.writeValue(response.getOutputStream(),
+                                    ApiError.of(HttpStatus.UNAUTHORIZED,
+                                            "Authentication required", request.getRequestURI()));
+                        })
+                        .accessDeniedHandler((request, response, exception) -> {
+                            response.setStatus(HttpStatus.FORBIDDEN.value());
+                            response.setContentType("application/json");
+                            objectMapper.writeValue(response.getOutputStream(),
+                                    ApiError.of(HttpStatus.FORBIDDEN,
+                                            "Access denied", request.getRequestURI()));
                         }))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
@@ -49,10 +65,9 @@ public class SecurityConfig {
 
     @Bean
     CorsConfigurationSource corsConfigurationSource(
-            @Value("${app.cors.allowed-origins}") String origins) {
+            AppProperties properties) {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.stream(origins.split(","))
-                .map(String::trim).filter(value -> !value.isEmpty()).toList());
+        configuration.setAllowedOrigins(properties.cors().allowedOrigins());
         configuration.setAllowedMethods(
                 java.util.List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(java.util.List.of("Authorization", "Content-Type"));

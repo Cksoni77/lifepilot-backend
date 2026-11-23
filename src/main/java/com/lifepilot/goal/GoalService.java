@@ -27,6 +27,11 @@ public class GoalService {
                 .map(GoalDtos.GoalResponse::from).toList();
     }
 
+    @Transactional(readOnly = true)
+    public GoalDtos.GoalResponse get(UUID id) {
+        return GoalDtos.GoalResponse.from(findOwned(id));
+    }
+
     @Transactional
     public GoalDtos.GoalResponse create(GoalDtos.GoalRequest request) {
         if (request.clientId() != null && !request.clientId().isBlank()) {

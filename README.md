@@ -10,10 +10,10 @@ LifePilot is a Java 17 / Spring Boot REST backend for the Flutter personal-manag
 4. From the backend root, run:
 
    ```powershell
-   mvn clean compile
-   mvn test
-   mvn clean package
-   mvn spring-boot:run
+   .\mvnw.cmd clean compile
+   .\mvnw.cmd test
+   .\mvnw.cmd clean package
+   .\mvnw.cmd spring-boot:run
    ```
 
 Full environment-variable and Neon setup instructions are in [BACKEND_SETUP.md](BACKEND_SETUP.md). `.env.example` contains placeholders only; Spring Boot does not load dotenv files automatically. Do not use a local database fallback.
@@ -25,11 +25,13 @@ Feature packages under `src/main/java/com/lifepilot` separate controllers, DTOs,
 ## API and project docs
 
 - [API endpoints](API_DOCUMENTATION.md)
-- [Build audit](BACKEND_BUILD_AUDIT.md)
+- [Implementation plan and audit](BACKEND_IMPLEMENTATION_PLAN.md)
 - [Latest build status](BACKEND_BUILD_STATUS.md)
+- [Setup](BACKEND_SETUP.md)
 - [Security](SECURITY.md)
 - [Architecture](ARCHITECTURE.md)
 - [Database design](DATABASE_DESIGN.md)
+- [Database schema](DATABASE_SCHEMA.md)
 - [AI design](AI_DESIGN.md)
 
 AI provider access is optional and configured only on the backend. Email verification and password reset are not available until an email provider is implemented.

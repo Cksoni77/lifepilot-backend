@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface HabitCompletionRepository extends JpaRepository<HabitCompletion, UUID> {
     List<HabitCompletion> findAllByHabit_IdOrderByCompletedOnAsc(UUID habitId);
+    List<HabitCompletion> findAllByHabit_Owner_IdOrderByCompletedOnAsc(UUID ownerId);
     List<HabitCompletion> findTop30ByHabit_IdOrderByCompletedOnDesc(UUID habitId);
     Optional<HabitCompletion> findByHabit_IdAndCompletedOn(UUID habitId, LocalDate completedOn);
     long countByHabit_IdAndCompletedOnBetween(UUID habitId, LocalDate start, LocalDate end);

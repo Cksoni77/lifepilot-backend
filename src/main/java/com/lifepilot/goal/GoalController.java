@@ -23,6 +23,11 @@ public class GoalController {
     @GetMapping
     public List<GoalDtos.GoalResponse> list() { return goalService.list(); }
 
+    @GetMapping("/{id}")
+    public GoalDtos.GoalResponse get(@PathVariable UUID id) {
+        return goalService.get(id);
+    }
+
     @PostMapping
     public GoalDtos.GoalResponse create(@Valid @RequestBody GoalDtos.GoalRequest request) {
         return goalService.create(request);

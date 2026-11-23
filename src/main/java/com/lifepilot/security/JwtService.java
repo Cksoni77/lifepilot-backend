@@ -1,29 +1,33 @@
 package com.lifepilot.security;
 
+import com.lifepilot.config.AppProperties;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
 import javax.crypto.SecretKey;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
 public class JwtService {
     private final SecretKey key;
-    private final long accessTokenMinutes;
+    private final Duration accessTokenLifetime;
 
-    public JwtService(
-            @Value("${app.jwt.secret}") String secret,
-            @Value("${app.jwt.access-token-minutes}") long accessTokenMinutes) {
-        if (accessTokenMinutes <= 0) {
+    public JwtService(AppProperties properties) {
+        if (properties.jwt().accessTokenMinutes() <= 0) {
             throw new IllegalArgumentException("JWT access-token lifetime must be positive");
         }
-        this.key = Keys.hmacShaKeyFor(Decoders.BASE64.decode(secret));
-        this.accessTokenMinutes = accessTokenMinutes;
+        try {
+            this.key = Keys.hmacShaKeyFor(Decoders.BASE64.decode(properties.jwt().secret()));
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException(
+                    "app.jwt.secret must be valid base64 encoding of at least 32 bytes");
+        }
+        this.accessTokenLifetime = Duration.ofMinutes(properties.jwt().accessTokenMinutes());
     }
 
     public String issueAccessToken(UUID userId) {
@@ -31,7 +35,7 @@ public class JwtService {
         return Jwts.builder()
                 .subject(userId.toString())
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plusSeconds(accessTokenMinutes * 60)))
+                .expiration(Date.from(now.plus(accessTokenLifetime)))
                 .signWith(key)
                 .compact();
     }

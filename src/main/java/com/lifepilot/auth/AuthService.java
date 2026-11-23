@@ -5,6 +5,7 @@ import com.lifepilot.auth.AuthDtos.LoginRequest;
 import com.lifepilot.auth.AuthDtos.ProfileRequest;
 import com.lifepilot.auth.AuthDtos.RegisterRequest;
 import com.lifepilot.auth.AuthDtos.UserResponse;
+import com.lifepilot.config.AppProperties;
 import com.lifepilot.security.CurrentUser;
 import com.lifepilot.security.JwtService;
 import com.lifepilot.user.AppUser;
@@ -18,7 +19,6 @@ import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -32,7 +32,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final CurrentUser currentUser;
-    private final long refreshTokenDays;
+    private final java.time.Duration refreshTokenLifetime;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public AuthService(
@@ -41,13 +41,17 @@ public class AuthService {
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             CurrentUser currentUser,
-            @Value("${app.jwt.refresh-token-days}") long refreshTokenDays) {
+            AppProperties properties) {
+        if (properties.jwt().refreshTokenDays() <= 0) {
+            throw new IllegalArgumentException("JWT refresh-token lifetime must be positive");
+        }
         this.users = users;
         this.refreshTokens = refreshTokens;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.currentUser = currentUser;
-        this.refreshTokenDays = refreshTokenDays;
+        this.refreshTokenLifetime = java.time.Duration.ofDays(
+                properties.jwt().refreshTokenDays());
     }
 
     @Transactional
@@ -73,7 +77,7 @@ public class AuthService {
 
     @Transactional
     public AuthResponse refresh(String rawToken) {
-        RefreshToken token = refreshTokens.findByTokenHash(hash(rawToken))
+        RefreshToken token = refreshTokens.findByTokenHashForUpdate(hash(rawToken))
                 .filter(value -> value.isUsableAt(OffsetDateTime.now(ZoneOffset.UTC)))
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.UNAUTHORIZED, "Refresh token is invalid or expired"));
@@ -83,7 +87,7 @@ public class AuthService {
 
     @Transactional
     public void logout(String rawToken) {
-        refreshTokens.findByTokenHash(hash(rawToken)).ifPresent(token ->
+        refreshTokens.findByTokenHashForUpdate(hash(rawToken)).ifPresent(token ->
                 token.revoke(OffsetDateTime.now(ZoneOffset.UTC)));
     }
 
@@ -106,7 +110,8 @@ public class AuthService {
         byte[] bytes = new byte[32];
         secureRandom.nextBytes(bytes);
         String rawRefreshToken = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC).plusDays(refreshTokenDays);
+        OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
+                .plus(refreshTokenLifetime);
         refreshTokens.save(new RefreshToken(user, hash(rawRefreshToken), expiresAt));
         return new AuthResponse(jwtService.issueAccessToken(user.getId()), rawRefreshToken, toResponse(user));
     }

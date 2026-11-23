@@ -207,7 +207,8 @@ public class AiService {
             LocalDate today = LocalDate.now(ZoneOffset.UTC);
             List<TaskDtos.TaskResponse> dueToday = userTasks.stream()
                     .filter(task -> !task.completed() && task.dueDate() != null
-                            && task.dueDate().toLocalDate().equals(today)).toList();
+                            && task.dueDate().withOffsetSameInstant(ZoneOffset.UTC)
+                                    .toLocalDate().equals(today)).toList();
             return new AiDtos.ChatResponse(
                     dueToday.isEmpty() ? "You have no saved pending tasks due today."
                             : "Your pending tasks due today: " + titles(dueToday),
@@ -219,7 +220,8 @@ public class AiService {
             LocalDate today = LocalDate.now(ZoneOffset.UTC);
             List<TaskDtos.TaskResponse> overdue = userTasks.stream()
                     .filter(task -> !task.completed() && task.dueDate() != null
-                            && task.dueDate().toLocalDate().isBefore(today)).toList();
+                            && task.dueDate().withOffsetSameInstant(ZoneOffset.UTC)
+                                    .toLocalDate().isBefore(today)).toList();
             return new AiDtos.ChatResponse(
                     overdue.isEmpty() ? "You have no saved overdue tasks."
                             : "Your overdue tasks: " + titles(overdue),

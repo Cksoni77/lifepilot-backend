@@ -1,9 +1,9 @@
 package com.lifepilot.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.lifepilot.config.AppProperties;
 import java.time.Duration;
 import java.util.List;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -18,14 +18,15 @@ public class OpenAiClient {
     private final String model;
     private final RestClient restClient;
 
-    public OpenAiClient(
-            @Value("${app.openai.api-key}") String apiKey,
-            @Value("${app.openai.model}") String model,
-            @Value("${app.openai.timeout-seconds}") long timeoutSeconds) {
-        this.apiKey = apiKey;
-        this.model = model;
+    public OpenAiClient(AppProperties properties) {
+        if (properties.openai().timeoutSeconds() <= 0) {
+            throw new IllegalArgumentException("OpenAI timeout must be positive");
+        }
+        this.apiKey = properties.openai().apiKey() == null
+                ? "" : properties.openai().apiKey();
+        this.model = properties.openai().model();
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory();
-        requestFactory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
+        requestFactory.setReadTimeout(Duration.ofSeconds(properties.openai().timeoutSeconds()));
         this.restClient = RestClient.builder().baseUrl("https://api.openai.com/v1")
                 .requestFactory(requestFactory).build();
     }

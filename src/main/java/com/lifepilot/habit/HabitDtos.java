@@ -32,4 +32,7 @@ public final class HabitDtos {
 
     public record HabitStatistics(
             int totalHabits, int completedThisWeek, int scheduledThisWeek) {}
+
+    public record HabitProgress(
+            UUID habitId, int totalCompletions, int currentStreak, int longestStreak) {}
 }

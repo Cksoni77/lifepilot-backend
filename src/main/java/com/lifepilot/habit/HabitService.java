@@ -4,6 +4,7 @@ import com.lifepilot.security.CurrentUser;
 import com.lifepilot.user.AppUserRepository;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -28,8 +29,33 @@ public class HabitService {
 
     @Transactional(readOnly = true)
     public List<HabitDtos.HabitResponse> list() {
-        return habits.findAllByOwner_IdOrderByCreatedAtDesc(currentUser.id()).stream()
-                .map(this::response).toList();
+        UUID userId = currentUser.id();
+        List<HabitEntity> owned = habits.findAllByOwner_IdOrderByCreatedAtDesc(userId);
+        var datesByHabit = completions.findAllByHabit_Owner_IdOrderByCompletedOnAsc(userId).stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        completion -> completion.getHabit().getId(),
+                        java.util.stream.Collectors.mapping(
+                                HabitCompletion::getCompletedOn,
+                                java.util.stream.Collectors.toList())));
+        return owned.stream().map(habit -> response(
+                habit, datesByHabit.getOrDefault(habit.getId(), List.of()))).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public HabitDtos.HabitResponse get(UUID id) {
+        return response(findOwned(id));
+    }
+
+    @Transactional(readOnly = true)
+    public HabitDtos.HabitProgress progress(UUID id) {
+        HabitEntity habit = findOwned(id);
+        List<LocalDate> dates = completions.findAllByHabit_IdOrderByCompletedOnAsc(id).stream()
+                .map(HabitCompletion::getCompletedOn).toList();
+        return new HabitDtos.HabitProgress(
+                id,
+                dates.size(),
+                HabitStreaks.current(dates, LocalDate.now(ZoneOffset.UTC)),
+                HabitStreaks.longest(dates));
     }
 
     @Transactional
@@ -91,15 +117,23 @@ public class HabitService {
     @Transactional(readOnly = true)
     public HabitDtos.HabitStatistics statistics() {
         List<HabitEntity> owned = habits.findAllByOwner_IdOrderByCreatedAtDesc(currentUser.id());
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
         LocalDate monday = today.with(DayOfWeek.MONDAY);
+        var completionsByHabit = completions
+                .findAllByHabit_Owner_IdOrderByCompletedOnAsc(currentUser.id()).stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        completion -> completion.getHabit().getId(),
+                        java.util.stream.Collectors.mapping(
+                                HabitCompletion::getCompletedOn, java.util.stream.Collectors.toSet())));
         int scheduled = 0;
         int completed = 0;
         for (HabitEntity habit : owned) {
             for (LocalDate day = monday; !day.isAfter(today); day = day.plusDays(1)) {
                 if (day.isBefore(habit.getStartDate()) || !isScheduled(habit, day)) continue;
                 scheduled++;
-                if (completions.findByHabit_IdAndCompletedOn(habit.getId(), day).isPresent()) completed++;
+                if (completionsByHabit.getOrDefault(habit.getId(), java.util.Set.of()).contains(day)) {
+                    completed++;
+                }
             }
         }
         return new HabitDtos.HabitStatistics(owned.size(), completed, scheduled);
@@ -113,6 +147,10 @@ public class HabitService {
     private HabitDtos.HabitResponse response(HabitEntity habit) {
         List<LocalDate> dates = completions.findAllByHabit_IdOrderByCompletedOnAsc(habit.getId())
                 .stream().map(HabitCompletion::getCompletedOn).toList();
+        return response(habit, dates);
+    }
+
+    private HabitDtos.HabitResponse response(HabitEntity habit, List<LocalDate> dates) {
         return new HabitDtos.HabitResponse(habit.getId(), habit.getName(), habit.getDescription(),
                 "customdays".equals(habit.getFrequency()) ? "customDays" : habit.getFrequency(),
                 habit.getSelectedWeekdays(), habit.getTargetDuration(),
@@ -132,7 +170,12 @@ public class HabitService {
     }
 
     private void validate(HabitDtos.HabitRequest request) {
-        if ("customDays".equalsIgnoreCase(request.frequency())
+        String frequency = request.frequency().toLowerCase(java.util.Locale.ROOT);
+        if (!java.util.Set.of("daily", "weekdays", "weekends", "customdays")
+                .contains(frequency)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported habit frequency");
+        }
+        if ("customdays".equals(frequency)
                 && (request.selectedWeekdays() == null || request.selectedWeekdays().isEmpty())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Select at least one weekday for a custom schedule");
@@ -140,6 +183,16 @@ public class HabitService {
         if (request.selectedWeekdays() != null
                 && request.selectedWeekdays().stream().anyMatch(day -> day < 1 || day > 7)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Weekdays must be from 1 to 7");
+        }
+        if (request.durationUnit() != null
+                && !java.util.Set.of("minutes", "hours")
+                        .contains(request.durationUnit().toLowerCase(java.util.Locale.ROOT))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported habit duration unit");
+        }
+        if (request.category() != null
+                && !java.util.Set.of("health", "fitness", "personal", "learning", "work", "other")
+                        .contains(request.category().toLowerCase(java.util.Locale.ROOT))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported habit category");
         }
     }
 

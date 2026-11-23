@@ -34,5 +34,6 @@ public class HabitCompletion {
     }
 
     public UUID getId() { return id; }
+    public HabitEntity getHabit() { return habit; }
     public LocalDate getCompletedOn() { return completedOn; }
 }

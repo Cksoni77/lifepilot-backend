@@ -2,10 +2,14 @@ spring:
   application:
     name: lifepilot-backend
   datasource:
-    url: jdbc:postgresql://ep-raspy-tree-bdn0cjaf-pooler.c-8.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
-    username: neondb_owner
-    password: npg_ip5Z4ghmJFVL
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:30000}
   jpa:
     open-in-view: false
     hibernate:
@@ -20,13 +24,24 @@ server:
   port: ${PORT:8080}
   error:
     include-message: never
+    include-binding-errors: never
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
 app:
   jwt:
-    secret: tU6GAehIjvLUnedxtXZw9pL0SEJpj8RSoIEGtT76NoQbaQWRyhB/mwXI+9cU/JsVn4gHe8+u1yVpQM1lh5m5F
+    secret: ${JWT_SECRET}
     access-token-minutes: ${JWT_ACCESS_TOKEN_MINUTES:15}
     refresh-token-days: ${JWT_REFRESH_TOKEN_DAYS:30}
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
   openai:
     api-key: ${OPENAI_API_KEY:}
     model: ${OPENAI_MODEL:gpt-4.1-mini}

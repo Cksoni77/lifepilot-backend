@@ -1,12 +1,12 @@
 package com.lifepilot.ai;
 
+import com.lifepilot.config.AppProperties;
 import com.lifepilot.task.TaskDtos;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -16,11 +16,12 @@ public class RecommendationEngine {
     private final double deadlineWeight;
     private final double goalRelevanceWeight;
 
-    public RecommendationEngine(
-            @Value("${app.recommendations.priority-weight:0.30}") double priorityWeight,
-            @Value("${app.recommendations.urgency-weight:0.30}") double urgencyWeight,
-            @Value("${app.recommendations.deadline-weight:0.20}") double deadlineWeight,
-            @Value("${app.recommendations.goal-relevance-weight:0.20}") double goalRelevanceWeight) {
+    public RecommendationEngine(AppProperties properties) {
+        AppProperties.Recommendations weights = properties.recommendations();
+        double priorityWeight = weights.priorityWeight().doubleValue();
+        double urgencyWeight = weights.urgencyWeight().doubleValue();
+        double deadlineWeight = weights.deadlineWeight().doubleValue();
+        double goalRelevanceWeight = weights.goalRelevanceWeight().doubleValue();
         double total = priorityWeight + urgencyWeight + deadlineWeight + goalRelevanceWeight;
         if (priorityWeight < 0 || urgencyWeight < 0 || deadlineWeight < 0
                 || goalRelevanceWeight < 0 || Math.abs(total - 1.0) > 0.0001) {

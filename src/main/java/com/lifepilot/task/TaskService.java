@@ -5,6 +5,7 @@ import com.lifepilot.goal.GoalRepository;
 import com.lifepilot.security.CurrentUser;
 import com.lifepilot.user.AppUserRepository;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
@@ -29,7 +30,23 @@ public class TaskService {
     }
 
     @Transactional(readOnly = true)
-    public List<TaskDtos.TaskResponse> list(String search, String status, String sort) {
+    public List<TaskDtos.TaskResponse> list(
+            String search, String status, String sort,
+            TaskCategory category, TaskPriority priority, Boolean completed,
+            LocalDate dueFrom, LocalDate dueTo) {
+        if (dueFrom != null && dueTo != null && dueTo.isBefore(dueFrom)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "dueTo must be on or after dueFrom");
+        }
+        if (status != null && !java.util.Set.of(
+                "all", "pending", "completed", "overdue", "today")
+                .contains(status.toLowerCase(java.util.Locale.ROOT))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported task status");
+        }
+        if (sort != null && !java.util.Set.of("createdAt", "priority", "dueDate")
+                .contains(sort)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported task sort order");
+        }
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         return tasks.findAllByOwner_IdOrderByCreatedAtDesc(currentUser.id()).stream()
                 .filter(task -> search == null || search.isBlank()
@@ -44,7 +61,35 @@ public class TaskService {
                             && task.getDueAt().toLocalDate().equals(today);
                     default -> true;
                 })
+                .filter(task -> category == null || task.getCategory() == category)
+                .filter(task -> priority == null || task.getPriority() == priority)
+                .filter(task -> completed == null || task.isCompleted() == completed)
+                .filter(task -> dueFrom == null && dueTo == null
+                        || task.getDueAt() != null
+                        && (dueFrom == null || !task.getDueAt().withOffsetSameInstant(ZoneOffset.UTC)
+                                .toLocalDate().isBefore(dueFrom))
+                        && (dueTo == null || !task.getDueAt().withOffsetSameInstant(ZoneOffset.UTC)
+                                .toLocalDate().isAfter(dueTo)))
                 .sorted(comparator(sort))
+                .map(TaskDtos.TaskResponse::from)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<TaskDtos.TaskResponse> forDateRange(
+            OffsetDateTime start, OffsetDateTime end) {
+        return tasks.findAllByOwner_IdAndDueAtGreaterThanEqualAndDueAtLessThanOrderByDueAtAsc(
+                        currentUser.id(), start, end).stream()
+                .map(TaskDtos.TaskResponse::from)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<TaskDtos.TaskResponse> upcomingReminders(
+            OffsetDateTime start, OffsetDateTime end) {
+        return tasks
+                .findAllByOwner_IdAndReminderEnabledTrueAndCompletedFalseAndReminderAtGreaterThanEqualAndReminderAtLessThanOrderByReminderAtAsc(
+                        currentUser.id(), start, end).stream()
                 .map(TaskDtos.TaskResponse::from)
                 .toList();
     }
