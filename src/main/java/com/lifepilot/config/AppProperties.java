@@ -18,8 +18,9 @@ import org.springframework.validation.annotation.Validated;
 public record AppProperties(
         @Valid @NotNull Jwt jwt,
         @Valid @NotNull Cors cors,
-        @Valid @NotNull OpenAi openai,
-        @Valid @NotNull Recommendations recommendations) {
+        @Valid @NotNull Ollama ollama,
+        @Valid @NotNull Recommendations recommendations,
+        @Valid @NotNull PriorityScoring priorityScoring) {
 
     public record Jwt(
             @NotBlank String secret,
@@ -33,10 +34,12 @@ public record AppProperties(
         }
     }
 
-    public record OpenAi(
-            String apiKey,
+    public record Ollama(
+            boolean enabled,
+            @NotBlank String baseUrl,
             @NotBlank String model,
-            @Positive long timeoutSeconds) {}
+            @Positive long connectTimeoutSeconds,
+            @Positive long responseTimeoutSeconds) {}
 
     public record Recommendations(
             @NotNull @DecimalMin("0.0") @DecimalMax("1.0") BigDecimal priorityWeight,
@@ -52,6 +55,26 @@ public record AppProperties(
             }
             BigDecimal total = priorityWeight.add(urgencyWeight)
                     .add(deadlineWeight).add(goalRelevanceWeight);
+            return total.subtract(BigDecimal.ONE).abs()
+                    .compareTo(new BigDecimal("0.0001")) <= 0;
+        }
+
+    }
+
+    public record PriorityScoring(
+            @NotNull @DecimalMin("0.0") @DecimalMax("1.0") BigDecimal urgencyWeight,
+            @NotNull @DecimalMin("0.0") @DecimalMax("1.0") BigDecimal importanceWeight,
+            @NotNull @DecimalMin("0.0") @DecimalMax("1.0") BigDecimal deadlineWeight,
+            @NotNull @DecimalMin("0.0") @DecimalMax("1.0") BigDecimal consequenceWeight) {
+
+        @AssertTrue(message = "Priority scoring weights must sum to 1")
+        public boolean isWeightTotalValid() {
+            if (urgencyWeight == null || importanceWeight == null
+                    || deadlineWeight == null || consequenceWeight == null) {
+                return true;
+            }
+            BigDecimal total = urgencyWeight.add(importanceWeight)
+                    .add(deadlineWeight).add(consequenceWeight);
             return total.subtract(BigDecimal.ONE).abs()
                     .compareTo(new BigDecimal("0.0001")) <= 0;
         }

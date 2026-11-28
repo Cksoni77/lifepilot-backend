@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 public final class TaskDtos {
@@ -22,13 +23,17 @@ public final class TaskDtos {
             Boolean completed,
             OffsetDateTime completedAt,
             @Positive Integer estimatedMinutes,
-            UUID goalId) {}
+            UUID goalId,
+            ActivityDetailsRequest activityDetails) {}
+
+    public record ActivityDetailsRequest(
+            String profile, String activityType, Map<String, Object> fields) {}
 
     public record TaskResponse(
             UUID id, UUID goalId, String title, String description, String category, String priority,
             boolean completed, OffsetDateTime dueDate, OffsetDateTime reminderDate,
             boolean reminderEnabled, Integer estimatedMinutes, OffsetDateTime createdAt,
-            OffsetDateTime completedAt) {
+            OffsetDateTime completedAt, ActivityDetailsResponse activityDetails) {
         public static TaskResponse from(TaskEntity task) {
             return new TaskResponse(task.getId(),
                     task.getGoal() == null ? null : task.getGoal().getId(),
@@ -37,7 +42,17 @@ public final class TaskDtos {
                     task.getPriority().name().toLowerCase(java.util.Locale.ROOT),
                     task.isCompleted(), task.getDueAt(), task.getReminderAt(),
                     task.isReminderEnabled(), task.getEstimatedMinutes(),
-                    task.getCreatedAt(), task.getCompletedAt());
+                    task.getCreatedAt(), task.getCompletedAt(),
+                    task.getActivityDetails() == null
+                            ? null : ActivityDetailsResponse.from(task.getActivityDetails()));
+        }
+    }
+
+    public record ActivityDetailsResponse(
+            String profile, String activityType, Map<String, Object> fields) {
+        static ActivityDetailsResponse from(TaskActivityDetails details) {
+            return new ActivityDetailsResponse(
+                    details.getProfile(), details.getActivityType(), details.getFields());
         }
     }
 }

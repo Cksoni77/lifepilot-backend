@@ -72,7 +72,7 @@ class TaskServiceAuthorizationTest {
 
         TaskDtos.TaskResponse result = service.create(new TaskDtos.TaskRequest(
                 clientId, "Imported task", "", TaskCategory.PERSONAL,
-                TaskPriority.HIGH, null, null, false, false, null, null, null));
+                TaskPriority.HIGH, null, null, false, false, null, null, null, null));
 
         assertEquals(existingId, result.id());
         verify(users, never()).findById(authenticatedUser);
@@ -86,7 +86,7 @@ class TaskServiceAuthorizationTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
         TaskDtos.TaskRequest request = new TaskDtos.TaskRequest(
                 null, "Write tests", "", TaskCategory.PERSONAL, TaskPriority.HIGH,
-                null, null, false, false, null, null, null);
+                null, null, false, false, null, null, null, null);
 
         TaskDtos.TaskResponse result = service.create(request);
 

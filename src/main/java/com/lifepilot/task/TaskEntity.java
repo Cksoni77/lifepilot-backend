@@ -12,6 +12,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.OneToOne;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -28,6 +30,10 @@ public class TaskEntity extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "goal_id")
     private GoalEntity goal;
+
+    @OneToOne(mappedBy = "task", cascade = CascadeType.ALL, orphanRemoval = true,
+            fetch = FetchType.LAZY)
+    private TaskActivityDetails activityDetails;
 
     @Column(nullable = false, length = 200)
     private String title;
@@ -83,6 +89,13 @@ public class TaskEntity extends BaseEntity {
         reminderAt = request.reminderAt();
         reminderEnabled = request.reminderEnabled();
         estimatedMinutes = request.estimatedMinutes();
+        if (request.activityDetails() == null) {
+            activityDetails = null;
+        } else if (activityDetails == null) {
+            activityDetails = new TaskActivityDetails(this, request.activityDetails());
+        } else {
+            activityDetails.update(request.activityDetails());
+        }
     }
 
     public void setCompleted(boolean value) {
@@ -101,6 +114,7 @@ public class TaskEntity extends BaseEntity {
     public AppUser getOwner() { return owner; }
     public GoalEntity getGoal() { return goal; }
     public void setGoal(GoalEntity goal) { this.goal = goal; }
+    public TaskActivityDetails getActivityDetails() { return activityDetails; }
     public String getTitle() { return title; }
     public String getDescription() { return description; }
     public TaskCategory getCategory() { return category; }

@@ -1,7 +1,9 @@
 package com.lifepilot.ai;
 
 import com.lifepilot.config.AppProperties;
+import com.lifepilot.task.TaskCategory;
 import com.lifepilot.task.TaskDtos;
+import com.lifepilot.user.UserProfile;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
@@ -34,14 +36,20 @@ public class RecommendationEngine {
     }
 
     public List<ScoredTask> rank(List<TaskDtos.TaskResponse> tasks) {
+        return rank(tasks, List.of());
+    }
+
+    public List<ScoredTask> rank(
+            List<TaskDtos.TaskResponse> tasks, List<UserProfile> profiles) {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         return tasks.stream().filter(task -> !task.completed())
-                .map(task -> score(task, today))
+                .map(task -> score(task, today, profiles))
                 .sorted(Comparator.comparingDouble(ScoredTask::score).reversed())
                 .toList();
     }
 
-    private ScoredTask score(TaskDtos.TaskResponse task, LocalDate today) {
+    private ScoredTask score(
+            TaskDtos.TaskResponse task, LocalDate today, List<UserProfile> profiles) {
         double priority = switch (task.priority().toLowerCase(java.util.Locale.ROOT)) {
             case "high" -> 100;
             case "medium" -> 60;
@@ -54,8 +62,11 @@ public class RecommendationEngine {
         double deadline = due == null ? 0 : days <= 0 ? 100
                 : Math.max(0, 100.0 / (days + 1));
         double goalRelevance = task.goalId() == null ? 0 : 100;
+        boolean profileRelevant = profiles.stream()
+                .anyMatch(profile -> matchesProfileCategory(profile, task.category()));
         double score = priorityWeight * priority + urgencyWeight * urgency
-                + deadlineWeight * deadline + goalRelevanceWeight * goalRelevance;
+                + deadlineWeight * deadline + goalRelevanceWeight * goalRelevance
+                + (profileRelevant ? 5 : 0);
         String explanation = due != null && days < 0
                 ? "This task is overdue."
                 : due != null && days <= 2
@@ -64,7 +75,19 @@ public class RecommendationEngine {
         if (task.estimatedMinutes() != null) {
             explanation += " Estimated time: " + task.estimatedMinutes() + " minutes.";
         }
-        return new ScoredTask(task, Math.round(score * 100.0) / 100.0, explanation);
+        if (profileRelevant) {
+            explanation += " This task matches a category associated with your selected profile.";
+        }
+        return new ScoredTask(task, Math.round(Math.min(100, score) * 100.0) / 100.0, explanation);
+    }
+
+    private boolean matchesProfileCategory(UserProfile profile, String category) {
+        TaskCategory preferredCategory = switch (profile) {
+            case WORKING_PROFESSIONAL, STUDENT, JOB_SEEKER, ENTREPRENEUR -> TaskCategory.WORK;
+            case HABIT_BUILDER -> TaskCategory.HEALTH;
+            case BUSY_INDIVIDUAL -> TaskCategory.PERSONAL;
+        };
+        return preferredCategory.name().equalsIgnoreCase(category);
     }
 
     public record ScoredTask(TaskDtos.TaskResponse task, double score, String explanation) {}

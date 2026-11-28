@@ -22,6 +22,12 @@ public class AiController {
         return aiService.chat(request);
     }
 
+    @PostMapping("/quick-add")
+    public AiDtos.QuickAddResponse quickAdd(
+            @Valid @RequestBody AiDtos.QuickAddRequest request) {
+        return aiService.quickAdd(request);
+    }
+
     @GetMapping("/conversations")
     public List<AiDtos.ConversationResponse> conversations() {
         return aiService.conversations();

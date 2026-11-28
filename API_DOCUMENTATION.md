@@ -14,7 +14,8 @@ The existing Flutter app expects array responses for tasks, habits, and goals. T
 | POST | `/api/auth/logout` | `{refreshToken}`; revokes refresh token |
 | GET | `/api/users/me` | Current profile |
 | PUT | `/api/users/me` | `{name}` |
-| GET / PUT | `/api/users/me/preferences` | Current user's preferences |
+| GET / PUT | `/api/users/me/preferences` | Current user's theme, timezone, notification, reminder, and schedule preferences |
+| GET / PUT | `/api/users/me/preferences/profiles` | Read or replace selected profiles; `{profiles:["WORKING_PROFESSIONAL","STUDENT"]}`. Empty list clears selection. Values are validated and scoped to the authenticated user. |
 
 Passwords must be 12–72 characters and are BCrypt-hashed. Refresh tokens are opaque random values stored as SHA-256 hashes and pessimistically locked during refresh/logout. Email verification/reset endpoints exist but return 503 because no email-delivery workflow is configured.
 
@@ -24,7 +25,7 @@ Passwords must be 12–72 characters and are BCrypt-hashed. Refresh tokens are o
 |---|---|---|
 | GET | `/api/tasks` | Optional `search`, `status` (`all`, `pending`, `completed`, `overdue`, `today`), `sort` (`createdAt`, `priority`, `dueDate`), `category`, `priority`, `completed`, `dueFrom`, `dueTo` |
 | GET | `/api/tasks?page=0&size=50` | Optional zero-based in-memory page; size 1–200; array remains compatible and pagination metadata is in `X-Total-Count`, `X-Page`, `X-Page-Size` |
-| POST | `/api/tasks` | Creates task; accepts Flutter's `dueAt` / `reminderAt` request field names and optional `goalId`, `clientId`, `completed`, `completedAt` |
+| POST | `/api/tasks` | Creates task; accepts Flutter's `dueAt` / `reminderAt` request field names and optional `goalId`, `clientId`, `completed`, `completedAt`, `estimatedMinutes`, and `activityDetails` |
 | GET / PUT / DELETE | `/api/tasks/{id}` | Owner-scoped operations |
 | PATCH | `/api/tasks/{id}/complete` | `{completed: true|false}` |
 | GET | `/api/tasks/today` | Pending tasks due today (UTC date) |
@@ -33,6 +34,10 @@ Passwords must be 12–72 characters and are BCrypt-hashed. Refresh tokens are o
 | GET | `/api/tasks/reminders/upcoming` | Optional offset-aware `from` and `to`; defaults to now through seven days |
 
 Task responses use `dueDate` and `reminderDate`, as expected by the current Flutter `Task` model. Categories and priorities are uppercase on input and lowercase on output. Date query filters use UTC calendar dates. Repeated creates with the same authenticated-user `clientId` are safe to retry.
+
+`activityDetails` is optional and backward-compatible. Its shape is
+`{"profile":"WORKING_PROFESSIONAL","activityType":"meeting","fields":{"startAt":"2026-11-27T13:00:00Z","endAt":"2026-11-27T14:00:00Z","attendees":"Team"}}`.
+The backend validates supported profile/activity pairs, derives the required task category, and enforces activity-specific requirements (including assignment subjects/deadlines, examination dates, interview dates and company/application, bill/payment amounts and dates, meeting ordering, business deadlines, and habit configuration/targets). Activity data is stored separately from the core task row in `task_activity_details` and is returned in task responses. Existing Task, Habit, Goal, and CalendarEvent APIs remain unchanged.
 
 ## Habits and goals
 
@@ -55,10 +60,14 @@ Habit and goal requests/response DTOs retain the Flutter field names, including 
 
 - `GET /api/dashboard/summary` returns authenticated-user task counts, completion percentage, weekly habit counts/streaks, goal progress, and up to five upcoming tasks.
 - `POST /api/ai/chat` accepts `{message, conversationId?}` and returns validated structured response fields and provider availability.
+- `POST /api/ai/quick-add` accepts `{text, requestId}` (text up to 4,000 characters) and returns suggested activities, `requiresClarification`, and an optional question. Each suggestion includes a stable `clientId` derived from the request ID for safe task-create retries, profile/category/type, priority, optional date/time/duration, reminder suggestion, confidence, and activity fields. This endpoint never writes tasks. Flutter must preview/edit/remove suggestions and only create approved records through `POST /api/tasks`.
 - `GET /api/ai/conversations` lists the current user's conversations; `GET /api/ai/conversations/{id}/messages` returns owner-scoped history.
 - `POST /api/ai/daily-plan` returns ranked pending tasks. It does not invent time slots or modify records.
 
-OpenAI configuration is optional and backend-only. Without a key, deterministic responses are used; a live provider request has not been verified. AI suggested actions are proposals and never mutate user data.
+Ollama is the default backend-only provider for AI chat and Quick Add. AI suggested actions are proposals and never mutate user data. Quick Add has no fallback that creates or stores activities if Ollama is unavailable.
+Selected profiles are added to the provider context and modestly prioritize saved tasks matching the existing work, health, or personal categories. No tasks, goals, habits, or schedule entries are invented or changed.
+
+Supported profile values are `WORKING_PROFESSIONAL`, `STUDENT`, `JOB_SEEKER`, `ENTREPRENEUR`, `HABIT_BUILDER`, and `BUSY_INDIVIDUAL`.
 
 ## Health and API reference
 

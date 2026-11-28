@@ -1,10 +1,12 @@
 # AI design
 
-`POST /api/ai/chat` derives the account UUID from the JWT, loads at most 100 of that user's recent tasks plus that user's habits and goals, and sends only these records and the message to the backend-configured OpenAI Responses API. The provider key is read from `OPENAI_API_KEY`; it is never part of Flutter configuration. The request asks for JSON and has a configurable timeout.
+`POST /api/ai/chat` derives the account UUID from the JWT, loads at most 100 of that user's recent tasks plus that user's habits and goals, and sends bounded saved context to the backend-configured local Ollama service. Ollama uses the configurable model and timeouts and is never called directly by Flutter.
+
+`POST /api/ai/quick-add` sends only the authenticated user's text, configured timezone, current local date, and selected profiles to Ollama. The response is constrained to a JSON Schema and validated against existing task categories, profile/activity combinations, lengths, and numeric bounds. The endpoint does not load or write task records. It returns stable per-request client IDs for the Flutter confirmation flow to use with the existing idempotent task API.
 
 The output is parsed into a structured response. Task references not found among the authenticated user's loaded tasks are removed. A non-empty proposed-action list makes `requiresConfirmation` true. No suggested action is executed.
 
-When no provider key exists, or the provider call/JSON response fails, deterministic replies can answer saved tasks due today, overdue tasks, and task-priority questions. Other questions receive an explicit message that natural-language AI is unavailable.
+When Ollama is disabled, or a chat provider/JSON response fails, deterministic replies can answer saved tasks due today, overdue tasks, and task-priority questions. Quick Add returns a safe service error instead of silently fabricating or persisting suggestions when Ollama is unavailable or returns invalid data.
 
 ## Initial priority heuristic
 
@@ -17,4 +19,4 @@ When no provider key exists, or the provider call/JSON response fails, determini
 
 This is an initial heuristic, not a validated productivity model. Task duration is included in explanations and context, but no calendar availability is available for slot allocation. Daily planning therefore ranks tasks and asks questions instead of inventing a schedule.
 
-Chats are not persisted yet; `conversationId` is accepted for API compatibility but currently unused. Provider content is external processing of the selected saved context; configure/obtain user consent consistent with the deployment's privacy policy before enabling it in production.
+Chat conversation history is persisted under the authenticated account. Quick Add text and suggestions are not persisted by the AI endpoint. The Ollama base URL is configurable; deployments should keep the service on a private network and obtain user consent consistent with their privacy policy.

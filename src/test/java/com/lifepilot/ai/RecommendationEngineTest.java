@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lifepilot.TestAppProperties;
 import com.lifepilot.task.TaskDtos;
+import com.lifepilot.user.UserProfile;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -39,28 +40,46 @@ class RecommendationEngineTest {
     }
 
     @Test
+    void selectedProfilesPreferMatchingSavedTaskCategories() {
+        TaskDtos.TaskResponse workTask = task("work", "LOW", "work", null, null);
+        TaskDtos.TaskResponse personalTask = task("personal", "LOW", "personal", null, null);
+
+        List<RecommendationEngine.ScoredTask> ranked = engine.rank(
+                List.of(personalTask, workTask),
+                List.of(UserProfile.WORKING_PROFESSIONAL, UserProfile.STUDENT));
+
+        assertEquals(workTask.id(), ranked.get(0).task().id());
+        assertTrue(ranked.get(0).explanation().contains("selected profile"));
+    }
+
+    @Test
     void rejectsWeightsThatDoNotSumToOne() {
         assertThrows(IllegalArgumentException.class,
                 () -> new RecommendationEngine(TestAppProperties.create(
-                        15, 30, "0.3", "0.3", "0.3", "0.2", "")));
+                        15, 30, "0.3", "0.3", "0.3", "0.2")));
     }
 
     @Test
     void configuredWeightsChangeTheScoringResult() {
         TaskDtos.TaskResponse highPriority = task("high", "HIGH", null, null);
         RecommendationEngine priorityWeighted = new RecommendationEngine(
-                TestAppProperties.create(15, 30, "0.60", "0.20", "0.10", "0.10", ""));
+                TestAppProperties.create(15, 30, "0.60", "0.20", "0.10", "0.10"));
         RecommendationEngine goalWeighted = new RecommendationEngine(
-                TestAppProperties.create(15, 30, "0.20", "0.20", "0.10", "0.50", ""));
+                TestAppProperties.create(15, 30, "0.20", "0.20", "0.10", "0.50"));
 
         assertTrue(priorityWeighted.rank(List.of(highPriority)).get(0).score()
                 > goalWeighted.rank(List.of(highPriority)).get(0).score());
     }
 
     private TaskDtos.TaskResponse task(
-            String priority, String ignoredTitle, OffsetDateTime dueAt, UUID goalId) {
+            String title, String priority, OffsetDateTime dueAt, UUID goalId) {
+        return task(title, priority, "personal", dueAt, goalId);
+    }
+
+    private TaskDtos.TaskResponse task(
+            String title, String priority, String category, OffsetDateTime dueAt, UUID goalId) {
         return new TaskDtos.TaskResponse(
-                UUID.randomUUID(), goalId, ignoredTitle, "", "personal", priority,
-                false, dueAt, null, false, 25, dueAt, null);
+                UUID.randomUUID(), goalId, title, "", category, priority,
+                false, dueAt, null, false, 25, dueAt, null, null);
     }
 }

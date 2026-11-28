@@ -2,6 +2,7 @@ package com.lifepilot.ai;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.common.SafeApiException;
 import com.lifepilot.calendar.CalendarEventRepository;
 import com.lifepilot.goal.GoalRepository;
 import com.lifepilot.habit.HabitCompletionRepository;
@@ -9,18 +10,27 @@ import com.lifepilot.habit.HabitRepository;
 import com.lifepilot.security.CurrentUser;
 import com.lifepilot.task.TaskDtos;
 import com.lifepilot.task.TaskRepository;
+import com.lifepilot.task.TaskService;
 import com.lifepilot.user.AppUserRepository;
+import com.lifepilot.user.UserPreferencesDtos;
+import com.lifepilot.user.UserPreferencesService;
+import com.lifepilot.user.UserProfile;
+import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,15 +49,17 @@ public class AiService {
     private final AiConversationRepository conversations;
     private final AiMessageRepository messages;
     private final RecommendationEngine recommendations;
-    private final OpenAiClient openAi;
+    private final OllamaClient ollama;
     private final ObjectMapper objectMapper;
+    private final UserPreferencesService preferences;
 
     public AiService(TaskRepository tasks, HabitRepository habits, GoalRepository goals,
             HabitCompletionRepository completions, CalendarEventRepository calendarEvents,
             CurrentUser currentUser, AppUserRepository users,
             AiConversationRepository conversations, AiMessageRepository messages,
             RecommendationEngine recommendations,
-            OpenAiClient openAi, ObjectMapper objectMapper) {
+            OllamaClient ollama, ObjectMapper objectMapper,
+            UserPreferencesService preferences) {
         this.tasks = tasks;
         this.habits = habits;
         this.completions = completions;
@@ -58,13 +70,19 @@ public class AiService {
         this.conversations = conversations;
         this.messages = messages;
         this.recommendations = recommendations;
-        this.openAi = openAi;
+        this.ollama = ollama;
         this.objectMapper = objectMapper;
+        this.preferences = preferences;
     }
 
     @Transactional
     public AiDtos.ChatResponse chat(AiDtos.ChatRequest request) {
         UUID userId = currentUser.id();
+        if (!ollama.isEnabled()) {
+            throw new SafeApiException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Local AI is disabled on this server.");
+        }
         AiConversationEntity conversation = request.conversationId() == null
                 ? newConversation(userId, request.message())
                 : findOwnedConversation(request.conversationId());
@@ -72,28 +90,188 @@ public class AiService {
                 messages.findTop10ByConversation_IdOrderByCreatedAtDesc(conversation.getId()));
         Collections.reverse(history);
         List<TaskDtos.TaskResponse> userTasks = taskResponses(userId);
-        List<RecommendationEngine.ScoredTask> ranked = recommendations.rank(userTasks);
-        String context = context(userId, userTasks, history);
+        List<UserProfile> profiles = preferences.getProfiles();
+        List<RecommendationEngine.ScoredTask> ranked = recommendations.rank(userTasks, profiles);
+        String context = context(userId, userTasks, history, profiles);
         messages.save(new AiMessageEntity(conversation, "user", request.message()));
         conversation.markActivity();
         AiDtos.ChatResponse answer;
-        if (!openAi.isConfigured()) {
-            answer = deterministicReply(request.message(), userTasks, ranked);
-        } else {
-            try {
-                answer = parseResponse(openAi.respond(request.message(), context), userTasks);
-            } catch (RestClientException | JsonProcessingException
-                    | IllegalArgumentException | IllegalStateException exception) {
-                logger.warn("AI provider response unavailable or invalid ({})",
-                        exception.getClass().getSimpleName());
-                answer = deterministicReply(request.message(), userTasks, ranked);
-            }
+        long startedAt = System.nanoTime();
+        try {
+            answer = parseResponse(ollama.respond(request.message(), context), userTasks);
+        } catch (ResourceAccessException exception) {
+            logger.warn("Ollama chat request failed after {} ms: connection unavailable",
+                    (System.nanoTime() - startedAt) / 1_000_000);
+            throw new SafeApiException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not reach local Ollama. Start Ollama and verify OLLAMA_BASE_URL.");
+        } catch (RestClientResponseException exception) {
+            logger.warn("Ollama chat request returned {} after {} ms",
+                    exception.getStatusCode().value(),
+                    (System.nanoTime() - startedAt) / 1_000_000);
+            throw new SafeApiException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Ollama could not process the chat request.");
+        } catch (RestClientException | JsonProcessingException
+                | IllegalArgumentException | IllegalStateException exception) {
+            logger.warn("Ollama chat response unavailable or invalid after {} ms ({})",
+                    (System.nanoTime() - startedAt) / 1_000_000,
+                    exception.getClass().getSimpleName());
+            throw new SafeApiException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Ollama returned an invalid chat response.");
         }
         messages.save(new AiMessageEntity(conversation, "assistant", answer.message()));
         conversation.markActivity();
         return new AiDtos.ChatResponse(answer.message(), answer.intent(), answer.relevantTaskIds(),
                 answer.recommendations(), answer.suggestedActions(), answer.explanation(),
                 answer.requiresConfirmation(), answer.providerAvailable(), conversation.getId());
+    }
+
+    @Transactional(readOnly = true)
+    public AiDtos.QuickAddResponse quickAdd(AiDtos.QuickAddRequest request) {
+        if (!ollama.isEnabled()) {
+            throw new SafeApiException(
+                    HttpStatus.SERVICE_UNAVAILABLE, "Local AI is disabled on this server.");
+        }
+
+        UserPreferencesDtos.PreferencesResponse userPreferences = preferences.get();
+        ZoneId zoneId;
+        try {
+            zoneId = ZoneId.of(userPreferences.timezone());
+        } catch (DateTimeException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR, "The saved timezone is invalid");
+        }
+        List<UserProfile> selectedProfiles = preferences.getProfiles();
+        List<String> profileValues = (selectedProfiles.isEmpty()
+                        ? List.of(UserProfile.values())
+                        : selectedProfiles).stream()
+                .map(Enum::name)
+                .toList();
+
+        String rawResponse;
+        try {
+            rawResponse = ollama.quickAdd(
+                    request.text(), LocalDate.now(zoneId), zoneId, profileValues);
+        } catch (ResourceAccessException exception) {
+            throw new SafeApiException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not reach local Ollama. Start Ollama and verify OLLAMA_BASE_URL.");
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 404) {
+                throw new SafeApiException(
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        "The configured Ollama model is unavailable. Pull the configured model first.");
+            }
+            throw new SafeApiException(
+                    HttpStatus.BAD_GATEWAY, "Ollama could not process the quick-add request.");
+        } catch (IllegalStateException exception) {
+            throw new SafeApiException(
+                    HttpStatus.BAD_GATEWAY, "Ollama returned an empty or invalid response.");
+        }
+
+        AiDtos.QuickAddModelResponse parsed;
+        try {
+            parsed = objectMapper.readValue(rawResponse, AiDtos.QuickAddModelResponse.class);
+        } catch (JsonProcessingException exception) {
+            throw new SafeApiException(
+                    HttpStatus.BAD_GATEWAY, "Ollama returned invalid structured activity data.");
+        }
+        if (parsed == null || parsed.activities() == null || parsed.activities().size() > 20) {
+            throw new SafeApiException(
+                    HttpStatus.BAD_GATEWAY, "Ollama returned an invalid activity list.");
+        }
+        if (parsed.requiresClarification()
+                && (parsed.clarificationQuestion() == null
+                        || parsed.clarificationQuestion().isBlank())) {
+            throw new SafeApiException(
+                    HttpStatus.BAD_GATEWAY, "Ollama did not provide the requested clarification.");
+        }
+        if (!parsed.requiresClarification() && parsed.activities().isEmpty()) {
+            throw new SafeApiException(
+                    HttpStatus.BAD_GATEWAY, "Ollama did not identify any activities.");
+        }
+
+        List<AiDtos.ActivitySuggestion> suggestions = new ArrayList<>();
+        for (int index = 0; index < parsed.activities().size(); index++) {
+            suggestions.add(validateSuggestion(
+                    parsed.activities().get(index), request.requestId(), index, selectedProfiles));
+        }
+        boolean requiresClarification = parsed.requiresClarification();
+        String clarificationQuestion = parsed.clarificationQuestion();
+        boolean meetingNeedsTime = suggestions.stream().anyMatch(suggestion ->
+                suggestion.activityType().equals("meeting")
+                        && (suggestion.startAt() == null
+                                || !suggestion.fields().containsKey("endAt")));
+        boolean reminderNeedsTime = suggestions.stream().anyMatch(suggestion ->
+                suggestion.reminderSuggested() && suggestion.reminderAt() == null);
+        if ((meetingNeedsTime || reminderNeedsTime) && !requiresClarification) {
+            requiresClarification = true;
+            clarificationQuestion = meetingNeedsTime
+                    ? "What start and end time should the meeting use?"
+                    : "What time would you like the reminder?";
+        }
+        return new AiDtos.QuickAddResponse(
+                request.requestId(), List.copyOf(suggestions),
+                requiresClarification, clarificationQuestion);
+    }
+
+    private AiDtos.ActivitySuggestion validateSuggestion(
+            AiDtos.ActivitySuggestionInput suggestion,
+            UUID requestId,
+            int index,
+            List<UserProfile> selectedProfiles) {
+        if (suggestion == null || suggestion.title() == null || suggestion.title().isBlank()
+                || suggestion.title().length() > 200
+                || suggestion.description() == null || suggestion.description().length() > 4000
+                || suggestion.profile() == null || suggestion.category() == null
+                || suggestion.priority() == null || suggestion.activityType() == null
+                || suggestion.activityType().length() > 40
+                || !TaskService.supportsActivityType(
+                        suggestion.profile(), suggestion.activityType())
+                || TaskService.categoryForProfile(suggestion.profile()) != suggestion.category()
+                || (!selectedProfiles.isEmpty()
+                        && !selectedProfiles.contains(suggestion.profile()))
+                || (suggestion.estimatedMinutes() != null
+                        && (suggestion.estimatedMinutes() <= 0
+                                || suggestion.estimatedMinutes() > 1440))
+                || !Double.isFinite(suggestion.confidence())
+                || suggestion.confidence() < 0 || suggestion.confidence() > 1
+                || suggestion.fields() == null || suggestion.fields().size() > 64) {
+            throw new SafeApiException(
+                    HttpStatus.BAD_GATEWAY, "Ollama returned an invalid activity suggestion.");
+        }
+        Map<String, Object> fields = new java.util.HashMap<>(suggestion.fields());
+        fields.replaceAll((key, value) -> {
+            if (key == null || key.isBlank() || key.length() > 80) {
+                throw new SafeApiException(
+                        HttpStatus.BAD_GATEWAY, "Ollama returned invalid activity fields.");
+            }
+            return value;
+        });
+        fields.values().removeIf(java.util.Objects::isNull);
+        if (suggestion.startAt() != null) {
+            fields.put("startAt", suggestion.startAt().toString());
+        }
+        if (suggestion.reminderAt() != null) {
+            fields.put("reminderAt", suggestion.reminderAt().toString());
+        }
+        return new AiDtos.ActivitySuggestion(
+                requestId + "-" + index,
+                suggestion.title().trim(),
+                suggestion.description(),
+                suggestion.profile(),
+                suggestion.category(),
+                suggestion.activityType(),
+                suggestion.priority(),
+                suggestion.dueDate(),
+                suggestion.startAt(),
+                suggestion.reminderAt(),
+                suggestion.estimatedMinutes(),
+                suggestion.reminderSuggested(),
+                suggestion.confidence(),
+                java.util.Collections.unmodifiableMap(fields));
     }
 
     @Transactional(readOnly = true)
@@ -116,8 +294,9 @@ public class AiService {
     @Transactional(readOnly = true)
     public AiDtos.DailyPlanResponse dailyPlan() {
         UUID userId = currentUser.id();
+        List<UserProfile> profiles = preferences.getProfiles();
         List<RecommendationEngine.ScoredTask> ranked =
-                recommendations.rank(taskResponses(userId));
+                recommendations.rank(taskResponses(userId), profiles);
         return new AiDtos.DailyPlanResponse(ranked, List.of(),
                 List.of("What hours are you available, and what fixed commitments should the plan avoid?"),
                 "Tasks are ranked from saved priorities, deadlines, and estimated durations. "
@@ -143,7 +322,8 @@ public class AiService {
     }
 
     private String context(
-            UUID userId, List<TaskDtos.TaskResponse> userTasks, List<AiMessageEntity> history) {
+            UUID userId, List<TaskDtos.TaskResponse> userTasks,
+            List<AiMessageEntity> history, List<UserProfile> profiles) {
         var userHabits = habits.findAllByOwner_IdOrderByCreatedAtDesc(userId).stream()
                 .limit(50)
                 .map(habit -> {
@@ -176,6 +356,7 @@ public class AiService {
         try {
             return objectMapper.writeValueAsString(java.util.Map.of(
                     "todayUtc", LocalDate.now(ZoneOffset.UTC).toString(),
+                    "selectedProfiles", profiles.stream().map(Enum::name).toList(),
                     "tasks", userTasks.stream().limit(50)
                             .map(task -> java.util.Map.of(
                                     "id", task.id(),
@@ -201,7 +382,7 @@ public class AiService {
 
     private AiDtos.ChatResponse deterministicReply(
             String message, List<TaskDtos.TaskResponse> userTasks,
-            List<RecommendationEngine.ScoredTask> ranked) {
+            List<RecommendationEngine.ScoredTask> ranked, List<UserProfile> profiles) {
         String normalized = message.toLowerCase(java.util.Locale.ROOT);
         if (normalized.contains("today")) {
             LocalDate today = LocalDate.now(ZoneOffset.UTC);
@@ -232,9 +413,14 @@ public class AiService {
         if (normalized.contains("priorit")) {
             List<String> lines = ranked.stream().limit(5)
                     .map(task -> task.task().title() + ": " + task.explanation()).toList();
+            String profileFocus = profiles.isEmpty() ? ""
+                    : " Profile focus: " + String.join(", ",
+                            profiles.stream().map(profile -> profile.name().toLowerCase(
+                                    java.util.Locale.ROOT).replace('_', ' ')).toList())
+                            + ". Recommendations use only your saved tasks.";
             return new AiDtos.ChatResponse(
                     lines.isEmpty() ? "You have no pending tasks to prioritize."
-                            : "Recommended order: " + String.join(" ", lines),
+                            : "Recommended order: " + String.join(" ", lines) + profileFocus,
                     "prioritize_tasks", ranked.stream().limit(5)
                             .map(task -> task.task().id()).toList(),
                     lines, List.of(), "Sorted by saved priority and due dates.",
@@ -242,7 +428,7 @@ public class AiService {
         }
         return new AiDtos.ChatResponse(
                 "AI chat is not configured. I can still answer questions about your saved tasks "
-                        + "for today, overdue tasks, or task priorities. Configure OPENAI_API_KEY to enable natural-language responses.",
+                        + "for today, overdue tasks, or task priorities. Start local Ollama to enable natural-language responses.",
                 "unsupported_without_provider", List.of(), List.of(), List.of(),
                 "No AI provider is configured; no external request was made.",
                 false, false, null);

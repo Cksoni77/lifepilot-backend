@@ -24,13 +24,19 @@ class AppPropertiesTest {
                     "app.jwt.access-token-minutes=15",
                     "app.jwt.refresh-token-days=30",
                     "app.cors.allowed-origins=https://example.test,http://localhost:8081",
-                    "app.openai.api-key=",
-                    "app.openai.model=gpt-4.1-mini",
-                    "app.openai.timeout-seconds=20",
+                    "app.ollama.enabled=false",
+                    "app.ollama.base-url=http://localhost:11434",
+                    "app.ollama.model=qwen3.5:4b",
+                    "app.ollama.connect-timeout-seconds=3",
+                    "app.ollama.response-timeout-seconds=120",
                     "app.recommendations.priority-weight=0.30",
                     "app.recommendations.urgency-weight=0.30",
                     "app.recommendations.deadline-weight=0.20",
                     "app.recommendations.goal-relevance-weight=0.20",
+                    "app.priority-scoring.urgency-weight=0.30",
+                    "app.priority-scoring.importance-weight=0.30",
+                    "app.priority-scoring.deadline-weight=0.25",
+                    "app.priority-scoring.consequence-weight=0.15",
                     "spring.datasource.url=jdbc:postgresql://db.example/lifepilot?sslmode=require",
                     "spring.datasource.username=placeholder-user",
                     "spring.datasource.password=placeholder-password",
@@ -48,9 +54,11 @@ class AppPropertiesTest {
             assertEquals(30, properties.jwt().refreshTokenDays());
             assertEquals(List.of("https://example.test", "http://localhost:8081"),
                     properties.cors().allowedOrigins());
-            assertEquals("", properties.openai().apiKey());
-            assertEquals("gpt-4.1-mini", properties.openai().model());
-            assertEquals(20, properties.openai().timeoutSeconds());
+            assertEquals(false, properties.ollama().enabled());
+            assertEquals("http://localhost:11434", properties.ollama().baseUrl());
+            assertEquals("qwen3.5:4b", properties.ollama().model());
+            assertEquals(3, properties.ollama().connectTimeoutSeconds());
+            assertEquals(120, properties.ollama().responseTimeoutSeconds());
             assertEquals(new BigDecimal("0.30"),
                     properties.recommendations().priorityWeight());
             assertEquals(new BigDecimal("0.30"),
@@ -59,6 +67,14 @@ class AppPropertiesTest {
                     properties.recommendations().deadlineWeight());
             assertEquals(new BigDecimal("0.20"),
                     properties.recommendations().goalRelevanceWeight());
+            assertEquals(new BigDecimal("0.30"),
+                    properties.priorityScoring().urgencyWeight());
+            assertEquals(new BigDecimal("0.30"),
+                    properties.priorityScoring().importanceWeight());
+            assertEquals(new BigDecimal("0.25"),
+                    properties.priorityScoring().deadlineWeight());
+            assertEquals(new BigDecimal("0.15"),
+                    properties.priorityScoring().consequenceWeight());
 
             HikariDataSource dataSource = context.getBean(HikariDataSource.class);
             assertEquals(7, dataSource.getMaximumPoolSize());
@@ -72,6 +88,8 @@ class AppPropertiesTest {
         runner.withPropertyValues("app.jwt.secret=")
                 .run(context -> assertTrue(context.getStartupFailure() != null));
         runner.withPropertyValues("app.recommendations.priority-weight=0.40")
+                .run(context -> assertTrue(context.getStartupFailure() != null));
+        runner.withPropertyValues("app.priority-scoring.consequence-weight=0.20")
                 .run(context -> assertTrue(context.getStartupFailure() != null));
     }
 

@@ -15,9 +15,11 @@
 | `app.jwt.access-token-minutes` | `JWT_ACCESS_TOKEN_MINUTES` | `AppProperties` → `JwtService` |
 | `app.jwt.refresh-token-days` | `JWT_REFRESH_TOKEN_DAYS` | `AppProperties` → `AuthService` |
 | `app.cors.allowed-origins` | `CORS_ALLOWED_ORIGINS` | `AppProperties` → Spring Security CORS |
-| `app.openai.api-key` | `OPENAI_API_KEY` | `AppProperties` → `OpenAiClient` |
-| `app.openai.model` | `OPENAI_MODEL` | `AppProperties` → `OpenAiClient` |
-| `app.openai.timeout-seconds` | `OPENAI_TIMEOUT_SECONDS` | `AppProperties` → `OpenAiClient` |
+| `app.ollama.enabled` | `OLLAMA_ENABLED` | `AppProperties` → `OllamaClient` |
+| `app.ollama.base-url` | `OLLAMA_BASE_URL` | `AppProperties` → `OllamaClient` |
+| `app.ollama.model` | `OLLAMA_MODEL` | `AppProperties` → `OllamaClient` |
+| `app.ollama.connect-timeout-seconds` | `OLLAMA_CONNECT_TIMEOUT_SECONDS` | `AppProperties` → `OllamaClient` |
+| `app.ollama.response-timeout-seconds` | `OLLAMA_RESPONSE_TIMEOUT_SECONDS` | `AppProperties` → `OllamaClient` |
 | `app.recommendations.priority-weight` | `RECOMMENDATION_PRIORITY_WEIGHT` | `AppProperties` → `RecommendationEngine` |
 | `app.recommendations.urgency-weight` | `RECOMMENDATION_URGENCY_WEIGHT` | `AppProperties` → `RecommendationEngine` |
 | `app.recommendations.deadline-weight` | `RECOMMENDATION_DEADLINE_WEIGHT` | `AppProperties` → `RecommendationEngine` |
@@ -25,4 +27,4 @@
 
 Set the environment variables in the same shell/process that launches Maven. PowerShell does not load `.env` files automatically. `.env.example` is documentation only and must not contain real credentials.
 
-The database URL must be a PostgreSQL JDBC URL with `sslmode=require`, and must not contain user information; supply credentials through their separate variables. JWT secret must be base64-encoded and decode to at least 32 bytes. OpenAI API key may be empty; the AI client is not called during startup.
+The database URL must be a PostgreSQL JDBC URL with `sslmode=require`, and must not contain user information; supply credentials through their separate variables. JWT secret must be base64-encoded and decode to at least 32 bytes. Ollama is contacted only when an authenticated AI endpoint is called.

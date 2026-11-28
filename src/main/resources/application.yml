@@ -42,12 +42,19 @@ app:
     refresh-token-days: ${JWT_REFRESH_TOKEN_DAYS:30}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
-  openai:
-    api-key: ${OPENAI_API_KEY:}
-    model: ${OPENAI_MODEL:gpt-4.1-mini}
-    timeout-seconds: ${OPENAI_TIMEOUT_SECONDS:20}
+  ollama:
+    enabled: ${OLLAMA_ENABLED:true}
+    base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+    model: ${OLLAMA_MODEL:qwen3.5:4b}
+    connect-timeout-seconds: ${OLLAMA_CONNECT_TIMEOUT_SECONDS:3}
+    response-timeout-seconds: ${OLLAMA_RESPONSE_TIMEOUT_SECONDS:120}
   recommendations:
     priority-weight: ${RECOMMENDATION_PRIORITY_WEIGHT:0.30}
     urgency-weight: ${RECOMMENDATION_URGENCY_WEIGHT:0.30}
     deadline-weight: ${RECOMMENDATION_DEADLINE_WEIGHT:0.20}
     goal-relevance-weight: ${RECOMMENDATION_GOAL_RELEVANCE_WEIGHT:0.20}
+  priority-scoring:
+    urgency-weight: ${PRIORITY_URGENCY_WEIGHT:0.30}
+    importance-weight: ${PRIORITY_IMPORTANCE_WEIGHT:0.30}
+    deadline-weight: ${PRIORITY_DEADLINE_WEIGHT:0.25}
+    consequence-weight: ${PRIORITY_CONSEQUENCE_WEIGHT:0.15}

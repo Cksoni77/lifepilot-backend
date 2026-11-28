@@ -32,6 +32,12 @@ public class ApiExceptionHandler {
         return error(status, message, request);
     }
 
+    @ExceptionHandler(SafeApiException.class)
+    public ResponseEntity<ApiError> handleSafeApiException(
+            SafeApiException exception, HttpServletRequest request) {
+        return error(exception.status(), exception.getMessage(), request);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> handleValidation(
             MethodArgumentNotValidException exception, HttpServletRequest request) {

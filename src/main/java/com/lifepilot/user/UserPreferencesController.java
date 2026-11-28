@@ -2,6 +2,7 @@ package com.lifepilot.user;
 
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -25,5 +26,17 @@ public class UserPreferencesController {
     public UserPreferencesDtos.PreferencesResponse update(
             @Valid @RequestBody UserPreferencesDtos.PreferencesRequest request) {
         return preferencesService.update(request);
+    }
+
+    @GetMapping("/profiles")
+    public UserPreferencesDtos.ProfilesResponse getProfiles() {
+        return new UserPreferencesDtos.ProfilesResponse(preferencesService.getProfiles());
+    }
+
+    @PutMapping("/profiles")
+    public UserPreferencesDtos.ProfilesResponse updateProfiles(
+            @Valid @RequestBody UserPreferencesDtos.ProfilesRequest request) {
+        return new UserPreferencesDtos.ProfilesResponse(
+                preferencesService.updateProfiles(request.profiles()));
     }
 }

@@ -31,16 +31,33 @@ Never commit actual credentials or include them in logs, issue reports, or docum
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `8080` | HTTP port |
-| `OPENAI_API_KEY` | empty | Optional backend-only provider key |
-| `OPENAI_MODEL` | `gpt-4.1-mini` | Provider model |
-| `OPENAI_TIMEOUT_SECONDS` | `20` | Provider timeout |
+| `OLLAMA_ENABLED` | `true` | Enable the local Ollama provider |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Backend-to-Ollama URL; keep the Ollama port local/private |
+| `OLLAMA_MODEL` | `qwen3.5:4b` | Model name already pulled by Ollama |
+| `OLLAMA_CONNECT_TIMEOUT_SECONDS` | `3` | Ollama connection timeout |
+| `OLLAMA_RESPONSE_TIMEOUT_SECONDS` | `120` | Ollama response timeout |
 | `DB_POOL_MAX_SIZE` | `10` | Hikari maximum connections |
 | `DB_POOL_MIN_IDLE` | `2` | Hikari minimum idle connections |
 | `DB_CONNECTION_TIMEOUT_MS` | `30000` | Connection acquisition timeout |
 
 `CORS_ALLOWED_ORIGINS` is required. Set it to comma-separated browser origins, such as `http://localhost:3000,http://localhost:8081`.
 
-OpenAI configuration is optional and is never called during startup. Missing provider credentials do not disable non-AI endpoints.
+Ollama is called only by authenticated AI endpoints. It is not called during startup, so a missing local service does not disable other API endpoints. Requests use the local backend-to-Ollama URL; do not bind or expose port 11434 to the public internet.
+
+## Run local Ollama
+
+Install Ollama for Windows, then in PowerShell pull the configured model and start the local service:
+
+```powershell
+ollama pull qwen3.5:4b
+ollama serve
+```
+
+Ollama for Windows may already run as a background service after installation; if so, only pull the model. In the backend terminal, leave `OLLAMA_BASE_URL` at `http://localhost:11434` when the service is on the same machine. If Spring Boot runs in a container or another host, set the URL to a private, reachable Ollama address and restrict its network access. No OpenAI key is required.
+
+## Run Flutter
+
+From the Flutter project root, run `flutter pub get` and `flutter run`. Set `API_BASE_URL` to the reachable Spring Boot URL for the device (for Android emulator, the project default is `http://10.0.2.2:8080`). The Quick Add feature is available from the AI tab. Generated suggestions are not persisted until the user confirms; the app submits each approved item through the existing task API.
 
 ## Run and verify
 

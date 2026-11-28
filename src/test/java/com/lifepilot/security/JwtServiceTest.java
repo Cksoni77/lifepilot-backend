@@ -31,7 +31,7 @@ class JwtServiceTest {
     @Test
     void accessTokenUsesConfiguredFifteenMinuteExpiry() {
         JwtService jwtService = new JwtService(TestAppProperties.create(
-                SECRET, 15, 30, "0.30", "0.30", "0.20", "0.20", ""));
+                SECRET, 15, 30, "0.30", "0.30", "0.20", "0.20"));
         String token = jwtService.issueAccessToken(UUID.randomUUID());
         var claims = Jwts.parser()
                 .verifyWith(Keys.hmacShaKeyFor(Base64.getDecoder().decode(SECRET)))
@@ -63,7 +63,7 @@ class JwtServiceTest {
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         });
         JwtService issuer = new JwtService(TestAppProperties.create(
-                otherSecret, 15, 30, "0.30", "0.30", "0.20", "0.20", ""));
+                otherSecret, 15, 30, "0.30", "0.30", "0.20", "0.20"));
         JwtService verifier = new JwtService(TestAppProperties.defaults());
         String wrongSignature = issuer.issueAccessToken(UUID.randomUUID());
 
@@ -75,7 +75,7 @@ class JwtServiceTest {
     void rejectsNonPositiveAccessTokenLifetime() {
         assertThrows(IllegalArgumentException.class,
                 () -> new JwtService(TestAppProperties.create(
-                        0, 30, "0.30", "0.30", "0.20", "0.20", "")));
+                        0, 30, "0.30", "0.30", "0.20", "0.20")));
     }
 
     @Test
@@ -83,7 +83,7 @@ class JwtServiceTest {
         String weakSecret = Base64.getEncoder().encodeToString(new byte[16]);
         assertThrows(IllegalStateException.class,
                 () -> new JwtService(TestAppProperties.create(
-                        weakSecret, 15, 30, "0.30", "0.30", "0.20", "0.20", "")));
+                        weakSecret, 15, 30, "0.30", "0.30", "0.20", "0.20")));
     }
 
     @Test

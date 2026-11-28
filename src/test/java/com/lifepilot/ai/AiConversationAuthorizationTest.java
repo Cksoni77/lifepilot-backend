@@ -15,6 +15,8 @@ import com.lifepilot.habit.HabitRepository;
 import com.lifepilot.security.CurrentUser;
 import com.lifepilot.task.TaskRepository;
 import com.lifepilot.user.AppUserRepository;
+import com.lifepilot.user.UserPreferencesService;
+import com.lifepilot.user.UserProfile;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -36,7 +38,8 @@ class AiConversationAuthorizationTest {
     @Mock private AppUserRepository users;
     @Mock private AiConversationRepository conversations;
     @Mock private AiMessageRepository messages;
-    @Mock private OpenAiClient openAi;
+    @Mock private OllamaClient ollama;
+    @Mock private UserPreferencesService preferences;
 
     private AutoCloseable mocks;
     private UUID authenticatedUser;
@@ -52,7 +55,7 @@ class AiConversationAuthorizationTest {
         service = new AiService(tasks, habits, goals, completions, calendarEvents,
                 new CurrentUser(), users, conversations, messages,
                 new RecommendationEngine(TestAppProperties.defaults()),
-                openAi, new ObjectMapper());
+                ollama, new ObjectMapper(), preferences);
     }
 
     @AfterEach
@@ -78,8 +81,8 @@ class AiConversationAuthorizationTest {
     void aiResponseValidationDropsForeignTaskIdsAndRequiresConfirmationForActions() {
         prepareChatMocks();
         UUID foreignTaskId = UUID.randomUUID();
-        when(openAi.isConfigured()).thenReturn(true);
-        when(openAi.respond(org.mockito.ArgumentMatchers.anyString(),
+        when(ollama.isEnabled()).thenReturn(true);
+        when(ollama.respond(org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString())).thenReturn(
                         """
                         {"message":"Suggested plan","intent":"planning",
@@ -96,33 +99,56 @@ class AiConversationAuthorizationTest {
     }
 
     @Test
-    void invalidAiResponseFallsBackWithoutExposingProviderDetails() {
+    void invalidAiResponseReturnsBadGateway() {
         prepareChatMocks();
-        when(openAi.isConfigured()).thenReturn(true);
-        when(openAi.respond(org.mockito.ArgumentMatchers.anyString(),
+        when(ollama.isEnabled()).thenReturn(true);
+        when(ollama.respond(org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn("{\"message\":\" \"}");
 
-        AiDtos.ChatResponse response = service.chat(
-                new AiDtos.ChatRequest("Help me plan", null));
+        com.lifepilot.common.SafeApiException error =
+                assertThrows(com.lifepilot.common.SafeApiException.class,
+                        () -> service.chat(new AiDtos.ChatRequest("Help me plan", null)));
 
-        assertEquals(false, response.providerAvailable());
-        org.junit.jupiter.api.Assertions.assertTrue(
-                response.message().contains("AI chat is not configured"));
+        assertEquals(HttpStatus.BAD_GATEWAY, error.status());
     }
 
     @Test
-    void missingProviderKeyUsesDeterministicReplyWithoutCallingProvider() {
+    void missingProviderKeyReturnsServiceUnavailableWithoutCallingProvider() {
         prepareChatMocks();
-        when(openAi.isConfigured()).thenReturn(false);
+        when(ollama.isEnabled()).thenReturn(false);
 
-        AiDtos.ChatResponse response = service.chat(
-                new AiDtos.ChatRequest("What tasks are due today?", null));
+        com.lifepilot.common.SafeApiException error =
+                assertThrows(com.lifepilot.common.SafeApiException.class,
+                        () -> service.chat(
+                                new AiDtos.ChatRequest("What tasks are due today?", null)));
 
-        assertEquals(false, response.providerAvailable());
-        assertEquals("tasks_today", response.intent());
-        verify(openAi, never()).respond(
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, error.status());
+        verify(ollama, never()).respond(
                 org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void selectedProfilesAreIncludedInProviderContext() {
+        prepareChatMocks();
+        when(preferences.getProfiles()).thenReturn(
+                java.util.List.of(UserProfile.STUDENT, UserProfile.JOB_SEEKER));
+        when(ollama.isEnabled()).thenReturn(true);
+        when(ollama.respond(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn(
+                        """
+                        {"message":"Based on your saved tasks","intent":"planning",
+                         "relevantTaskIds":[],"recommendations":[],"suggestedActions":[],
+                         "requiresConfirmation":false}
+                        """);
+
+        service.chat(new AiDtos.ChatRequest("Help me prioritize", null));
+
+        org.mockito.ArgumentCaptor<String> context =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(ollama).respond(org.mockito.ArgumentMatchers.anyString(), context.capture());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                context.getValue().contains("\"selectedProfiles\":[\"STUDENT\",\"JOB_SEEKER\"]"));
     }
 
     private void prepareChatMocks() {
@@ -142,5 +168,6 @@ class AiConversationAuthorizationTest {
         when(calendarEvents.findTop50ByOwner_IdAndEndsAtAfterOrderByStartsAtAsc(
                 org.mockito.ArgumentMatchers.eq(authenticatedUser),
                 org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        when(preferences.getProfiles()).thenReturn(java.util.List.of());
     }
 }
